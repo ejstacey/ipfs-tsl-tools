@@ -4,6 +4,7 @@ import psycopg2
 import csv
 import pprint
 from configparser import ConfigParser
+import urllib.parse
 
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -73,7 +74,7 @@ def generate_html(html, node):
         # pp.pprint(entry)
         if 'cid' in entry:
             # actual entry
-            html += '<li><a href="https://ipfs.joyrex.net/ipfs/' + entry['cid'] + '" target="_blank">' + entry['filename'] + '</a></li>'
+            html += '<li><a href="https://ipfs.joyrex.net/ipfs/' + entry['cid'] + '?filename=' + urllib.parse.quote(entry['filename']) + '" target="_blank">' + entry['filename'] + '</a></li>'
             html += "\n"
         else:
             html += '<li><span class="rootTree">' + i + '/</span>'
