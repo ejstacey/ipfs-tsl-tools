@@ -1,0 +1,38 @@
+/* stolen from https://www.tutorialspoint.com/how-to-create-a-tree-view-with-css-and-javascript */
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+ }
+ ul, #treeUL {
+    list-style-type: none;
+ }
+ #treeUL {
+    margin: 0;
+    padding: 0;
+ }
+ .rootTree {
+    cursor: pointer;
+    user-select: none;
+    font-size: 18px;
+    font-weight: bold;
+    color: blue;
+ }
+ li {
+    font-size: 16px;
+    color: crimson;
+    font-weight: 500;
+ }
+ .rootTree::before {
+    content: "\25B6";
+    color: black;
+    display: inline-block;
+    margin-right: 6px;
+ }
+ .rootTree-down::before {
+    transform: rotate(90deg);
+ }
+ .children {
+    display: none;
+ }
+ .active {
+    display: block;
+ }
