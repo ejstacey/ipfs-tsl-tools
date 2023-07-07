@@ -1,1 +1,4 @@
 database.ini
+sync-tsl-to-ipfs-go/tslDb.json
+sync-tsl-to-ipfs-go/ipfsDb.json
+settings.json

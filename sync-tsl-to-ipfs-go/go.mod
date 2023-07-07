@@ -5,6 +5,7 @@ go 1.20
 require github.com/ipfs/go-ipfs-api v0.6.0
 
 require (
+	github.com/adhocore/jsonc v0.10.0
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3 // indirect
 	github.com/davecgh/go-spew v1.1.1
