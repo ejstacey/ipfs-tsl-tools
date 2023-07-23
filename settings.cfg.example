@@ -1,0 +1,21 @@
+[options]
+# if refresh is set to False, and json db files exist, it'll use existing json db files
+# if refresh is set to True, or the json db files don't exist, it'll generate the db files (and dump them)
+refresh = False
+# The name of the file to use for the ipfsDb db save
+ipfsDbFileName = ipfsDb.json
+# The name of the file to use for the tslDb db save
+tslDbFileName = tslDb.json
+
+
+[remote]
+# RPC port of the ipfs server. You may have to make it listen on your local network IP, or set up an SSH tunnel
+ipfsServer = 1.2.3.4
+# RPC port of the ipfs server
+ipfsPort = 5001
+# the directory TSL is mounted into on the docker container or server running ipfs
+tslDirectory = /data/mounted-files/tsl
+
+[local]
+# the local directory TSL is mounted into on the machine running this script
+tslDirectory = /mnt/tsl

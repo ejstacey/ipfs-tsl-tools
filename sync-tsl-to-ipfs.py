@@ -1,45 +1,44 @@
-#!/bin/env python
+#!/bin/env python3
 
 import pprint
 import json
 import requests
 from requests_toolbelt.utils import dump
-# import asyncio
-# import aioipfs
+import argparse
+import configparser
 from requests.exceptions import HTTPError
 from pathlib import Path
 
 pp = pprint.PrettyPrinter(indent=4)
 
-###### Settings - do this with a config file in the future, maybe
-settings = {
-    # RPC port of the ipfs server. You may have to make it listen on your local network IP, or set up an SSH tunnel
-    'ipfsServer'                : '192.168.1.55',
-    # RPC port of the ipfs server
-    'ipfsPort'                  : 15001,
-    # the local directory TSL is mounted into on the machine running this script
-    'tslDirectory'              : '/mnt/tsl',
-    # the directory TSL is mounted into on the docker container or server running ipfs
-    'remoteTslDirectory'        : '/data/mounted-files/tsl',
-    # if verify is set to True, each file in TSL will be hashed and checked against what's currently in IPFS
-    # if verify is set to False, it just works off filesize (and file name, which is the "key")
-    # A verify takes hours.
-    'verify'                    : False,
-    # if refresh is set to False, and json db files exist, it'll use existing json db files
-    # if refresh is set to True, or the json db files don't exist, it'll generate the db files (and dump them)
-    'refresh'                   : False,
-    # The name of the file to use for the ipfsDb db save
-    'ipfsDbFileName'            : 'ipfsDb.json',
-    # The name of the file to use for the tslDb db save
-    'tslDbFileName'             : 'tslDb.json'
-}
+###### See if a different config file is specified
+parser = argparse.ArgumentParser(
+    prog='sync-tsl-to-ipfs',
+    description='This program tries to make sure the local directory matches what the IPFS thinks is correct. It adds/removes files to the IPFS directory as necessary.'
+)
+
+parser.add_argument('--config', '-c',
+                    action='store',
+                    default='settings.cfg',
+                    help='configuration filename (default: settings.cfg)'
+)
+args = parser.parse_args()
+
+###### Settings load
+config = configparser.RawConfigParser()
+config.read(args.config)
+
+settings = {}
+settings['remote'] = dict(config.items('remote'))
+settings['options'] = dict(config.items('options'))
+settings['local'] = dict(config.items('local'))
 
 def grabCurrentIpfs(settings, directory="/"):
     ipfsDb = {}
 
     # filesObj = settings['ipfsSession'].files.ls(path=directory,params={'long': True})
 
-    url = "http://" + settings['ipfsServer'] + ":" + settings['ipfsPort'] + "/api/v0/files/ls"
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/ls"
     args = {
         'arg'   : directory,
         'long'  : True
@@ -51,19 +50,18 @@ def grabCurrentIpfs(settings, directory="/"):
         if result["Entries"] is not None:
             entries = result['Entries']
             for entry in entries:
-                match entry['Type']:
-                    case 0:
-                        # file, grab its info.. but we want it to be in the proper structure of the db
-                        entry['Path'] = directory
-                        ipfsDb[entry['Name']] = entry
-                    case 1:
-                        # directory, go deeper
-                        newDirectory = directory + entry['Name'] + '/'
-                        tmpData = grabCurrentIpfs(settings, newDirectory)
-                        ipfsDb[entry['Name'] + '/'] = tmpData
-                    case _:
-                        pp.pprint(entry)
-                        raise Exception('Unknown IPFS type: ' + entry['Type'])
+                if entry['Type'] == 0:
+                    # file, grab its info.. but we want it to be in the proper structure of the db
+                    entry['Path'] = directory
+                    ipfsDb[entry['Name']] = entry
+                elif entry['Type'] == 1:
+                    # directory, go deeper
+                    newDirectory = directory + entry['Name'] + '/'
+                    tmpData = grabCurrentIpfs(settings, newDirectory)
+                    ipfsDb[entry['Name'] + '/'] = tmpData
+                else:
+                    pp.pprint(entry)
+                    raise Exception('Unknown IPFS type: ' + entry['Type'])
 
     return ipfsDb
 
@@ -78,11 +76,11 @@ def grabCurrentTsl(settings, directory):
 
         if (path.is_file()):
             stats = path.stat()
-            mfsPath = str(path).replace(settings['tslDirectory'], '/The Silent Library')
+            mfsPath = str(path).replace(settings['local']['tsldirectory'], '/The Silent Library')
             fileEntry = {
                 'name'          : path.name,
                 'size'          : stats.st_size,
-                'remotePath'    : str(path).replace(settings['tslDirectory'], settings['remoteTslDirectory']),
+                'remotePath'    : str(path).replace(settings['local']['tsldirectory'], settings['remote']['tsldirectory']),
                 'mfsPath'       : mfsPath,
                 'localPath'     : str(path)
             }
@@ -99,7 +97,7 @@ def grabCurrentTsl(settings, directory):
     return tslDb
 
 def verifyIpfsLibrary(settings):
-    url = "http://" + settings['ipfsServer'] + ":" + str(settings['ipfsPort']) + "/api/v0/filestore/verify"
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + str(settings['remote']['ipfsport']) + "/api/v0/filestore/verify"
     r = requests.post(url)
     print(r.json())    
 
@@ -139,7 +137,7 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
                 addEntries(settings, tslDb[path])
 
 def removeEntries(settings, entry):
-    url = "http://" + settings['ipfsServer'] + ":" + settings['ipfsPort'] + "/api/v0/files/rm"
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/rm"
     args = {
         'arg'           : entry['Path'] + entry['Name'],
         'recursive'     : True
@@ -154,33 +152,40 @@ def removeEntries(settings, entry):
         raise Exception("Could not properly parse the return from a removal attempt of " + entry['Path'] + entry['Name'] + ":\n" + r.text)
 
 def addEntries(settings, entry):
-    url = "http://" + settings['ipfsServer'] + ":" + settings['ipfsPort'] + "/api/v0/add"
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/add"
     args = {
         'quieter'       : 'true',
         'nocopy'        : 'true',
         'to-files'      : entry['mfsPath']
     }
 
-    file = open(entry['localPath'], 'rb')
+    # file = open(entry['localPath'], 'rb')
 
-    files = {
-            'file'          : (
-                                entry['name'],
-                                file,
-                                'application/octet-stream',
-                                {
-                                    'Abspath': entry['remotePath']
-                                }
-                            )
-            }
+
+    # files = {
+    #         'file'          : (
+    #                             entry['name'],
+    #                             file,
+    #                             'application/octet-stream',
+    #                             {
+    #                                 'Abspath': entry['remotePath']
+    #                             }
+    #                         )
+    #         }
+
+    headers = {
+        'Abspath': entry['remotePath']
+    }
     
     print('Adding ' + entry['mfsPath'])
     try:
         # print(url)
-        r = requests.post(url, params=args, files=files)
+        with open(entry['localPath'], 'rb') as file:
+            r = requests.post(url, data=file, headers=headers)
+        # r = requests.post(url, params=args, files=files)
 
-        # data = dump.dump_all (r)
-        # print (data.decode ('utf-8'))
+        data = dump.dump_all (r)
+        print (data.decode ('utf-8'))
 
         # If the response was successful, no Exception will be raised
         r.raise_for_status()
@@ -199,37 +204,34 @@ def addEntries(settings, entry):
             raise Exception("Could not properly parse the return from an addition attempt of " + entry['mfsPath'] + ".\n" + r.content())
         
 def main():
-    # Create IPFS session
-    # headers = {"CustomHeader": "foobar"}
-    # >>> client = ipfshttpclient.connect('/dns/ipfs-api.example.com/tcp/443/https', headers=headers)
-    settings['ipfsPort'] = str(settings['ipfsPort'])
-    settings['maddr'] = '/ip4/' + settings['ipfsServer'] + '/tcp/' + settings['ipfsPort']
+    settings['remote']['ipfsport'] = str(settings['remote']['ipfsport'])
+    settings['remote']['maddr'] = '/ip4/' + settings['remote']['ipfsserver'] + '/tcp/' + settings['remote']['ipfsport']
 
     # Load/set up the existing ipfs info
     ipfsDb = {}
-    dbFile = Path(settings['ipfsDbFileName'])
-    if settings['refresh'] or not dbFile.is_file():
-        print("Loading IPFS info from " + settings['ipfsServer'] + ":" + settings['ipfsPort'] + ".")
+    dbFile = Path(settings['options']['ipfsdbfilename'])
+    if settings['options']['refresh'] or not dbFile.is_file():
+        print("Loading IPFS info from " + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + ".")
         ipfsDb['The Silent Library/'] = grabCurrentIpfs(settings, "/The Silent Library/")
-        with open(settings['ipfsDbFileName'],"w") as file:
+        with open(settings['options']['ipfsdbfilename'],"w") as file:
             file.write(json.dumps(ipfsDb))
     else:
-        print("Loading IPFS info from existing file " + settings['ipfsDbFileName'] + ".")
-        with open(settings['ipfsDbFileName'],"r") as file:
+        print("Loading IPFS info from existing file " + settings['options']['ipfsdbfilename'] + ".")
+        with open(settings['options']['ipfsdbfilename'],"r") as file:
             ipfsDb = json.load(file)
     print("Done loading IPFS info.")
 
     # Load/set up the current TSL info
     tslDb = {}
-    dbFile = Path(settings['tslDbFileName'])
-    if settings['refresh'] or not dbFile.is_file():
-        print("Loading TSL Library from " + settings['tslDirectory'])
-        tslDb['The Silent Library/'] = grabCurrentTsl(settings, settings['tslDirectory'])
-        with open(settings['tslDbFileName'],"w") as file:
+    dbFile = Path(settings['options']['tsldbfilename'])
+    if settings['options']['refresh'] or not dbFile.is_file():
+        print("Loading TSL Library from " + settings['local']['tsldirectory'])
+        tslDb['The Silent Library/'] = grabCurrentTsl(settings, settings['local']['tsldirectory'])
+        with open(settings['options']['tsldbfilename'],"w") as file:
             file.write(json.dumps(tslDb))
     else:
-        print("Loading TSL Library from existing file " + settings['tslDbFileName'] + ".")
-        with open(settings['tslDbFileName'],"r") as file:
+        print("Loading TSL Library from existing file " + settings['options']['tsldbfilename'] + ".")
+        with open(settings['options']['tsldbfilename'],"r") as file:
             tslDb = json.load(file)
     print("Done loading TSL Library.")
 
