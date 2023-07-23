@@ -3,8 +3,9 @@
 import pprint
 import json
 import requests
-import asyncio
-import aioipfs
+from requests_toolbelt.utils import dump
+# import asyncio
+# import aioipfs
 from requests.exceptions import HTTPError
 from pathlib import Path
 
@@ -30,13 +31,13 @@ settings = {
     # The name of the file to use for the ipfsDb db save
     'ipfsDbFileName'            : 'ipfsDb.json',
     # The name of the file to use for the tslDb db save
-    'tslDbFileName'            : 'tslDb.json'
+    'tslDbFileName'             : 'tslDb.json'
 }
 
 def grabCurrentIpfs(settings, directory="/"):
     ipfsDb = {}
 
-    filesObj = settings['ipfsSession'].files.ls(path=directory,params={'long': True})
+    # filesObj = settings['ipfsSession'].files.ls(path=directory,params={'long': True})
 
     url = "http://" + settings['ipfsServer'] + ":" + settings['ipfsPort'] + "/api/v0/files/ls"
     args = {
@@ -79,10 +80,11 @@ def grabCurrentTsl(settings, directory):
             stats = path.stat()
             mfsPath = str(path).replace(settings['tslDirectory'], '/The Silent Library')
             fileEntry = {
-                'name'      : path.name,
-                'size'      : stats.st_size,
-                'path'      : str(path).replace(settings['tslDirectory'], settings['remoteTslDirectory']),
-                'mfsPath'   : mfsPath
+                'name'          : path.name,
+                'size'          : stats.st_size,
+                'remotePath'    : str(path).replace(settings['tslDirectory'], settings['remoteTslDirectory']),
+                'mfsPath'       : mfsPath,
+                'localPath'     : str(path)
             }
             tslDb[path.name] = fileEntry
         elif (path.is_dir()):
@@ -142,56 +144,66 @@ def removeEntries(settings, entry):
         'arg'           : entry['Path'] + entry['Name'],
         'recursive'     : True
     }
-    # print('remove')
+    print('Removing ' + entry['Path'] + entry['Name'])
     # pp.pprint(entry)
     r = requests.post(url, params=args)
-    if (r.text() == 'This endpoint returns a `text/plain` response body.'):
-        raise Exception("Removed: " + entry['Path'] + entry['Name'])
+    r.raise_for_status()
+    if (r.text == '' or 'file does not exist' in r.text):
+        return
     else:
-        raise Exception("Could not properly parse the return from a removal attempt of " + entry['Path'] + entry['Name'] + ":\n" + r.text())
+        raise Exception("Could not properly parse the return from a removal attempt of " + entry['Path'] + entry['Name'] + ":\n" + r.text)
 
 def addEntries(settings, entry):
     url = "http://" + settings['ipfsServer'] + ":" + settings['ipfsPort'] + "/api/v0/add"
     args = {
-        'quieter '      : True,
-        'nocopy'        : True,
+        'quieter'       : 'true',
+        'nocopy'        : 'true',
         'to-files'      : entry['mfsPath']
     }
+
+    file = open(entry['localPath'], 'rb')
+
+    files = {
+            'file'          : (
+                                entry['name'],
+                                file,
+                                'application/octet-stream',
+                                {
+                                    'Abspath': entry['remotePath']
+                                }
+                            )
+            }
+    
+    print('Adding ' + entry['mfsPath'])
     try:
-        r = requests.post(url, params=args, headers={'Content-Type': 'multipart/form-data'}, data={"Abspath":entry['path'], 'Content-Disposition': 'form-data; name="file"; filename="' + entry['mfsPath'] + '"'})
+        # print(url)
+        r = requests.post(url, params=args, files=files)
+
+        # data = dump.dump_all (r)
+        # print (data.decode ('utf-8'))
 
         # If the response was successful, no Exception will be raised
         r.raise_for_status()
     except HTTPError as http_err:
+        if (r.status_code == 500):
+            err = r.json()
+            http_err = err['Message']
         raise Exception(f'HTTP error occurred: {http_err}')
     except Exception as err:
         raise Exception(f'Other error occurred: {err}')
     else:
         result = r.json()
         if ('Name' in result):
-            raise Exception("Added: " +entry['mfsPath'])
+            return
         else:
             raise Exception("Could not properly parse the return from an addition attempt of " + entry['mfsPath'] + ".\n" + r.content())
-
-async def main():
+        
+def main():
     # Create IPFS session
     # headers = {"CustomHeader": "foobar"}
     # >>> client = ipfshttpclient.connect('/dns/ipfs-api.example.com/tcp/443/https', headers=headers)
     settings['ipfsPort'] = str(settings['ipfsPort'])
     settings['maddr'] = '/ip4/' + settings['ipfsServer'] + '/tcp/' + settings['ipfsPort']
-    settings['ipfsSession'] = aioipfs.AsyncIPFS(maddr=settings['maddr'])
-    # settings['ipfsSession'] = ipfshttpclient.connect(settings['maddr'])
-    fsObj = settings['ipfsSession'].filestore
-    params = {
-        'long'  : True,
-        'arg'   : '/The Silent Library/Ashita ga Aru sa/'
-    }
-    filesObj = settings['ipfsSession'].files
-    reply = await filesObj.fetch_json(filesObj.url('file/ls'), params=params)
-    # reply = await filesObj.ls()
-    pp.pprint(reply)
-    await settings['ipfsSession'].close()
-    raise Exception('done')
 
     # Load/set up the existing ipfs info
     ipfsDb = {}
@@ -221,15 +233,22 @@ async def main():
             tslDb = json.load(file)
     print("Done loading TSL Library.")
 
+    # entry = {
+    #     'path'      : '/home/ejstacey/Hello.txt',
+    #     'mfsPath'   : '/Hello.txt'
+    # }
+    # addEntries(settings=settings, entry=entry)
+    # addDirectory(settings=settings, entry=entry)
+
     # OK we have two dicts full of all the info we care about
     # parse it.
     # print("ipfsDb:")
     # pp.pprint(ipfsDb)
     # print("tslDb:")
     # pp.pprint(tslDb)
-    print("parsing:")
+    # print("parsing:")
     parsePaths(settings, '', ipfsDb, tslDb)
     # verifyIpfsLibrary(settings)
 
-asyncio.run(main())
+main()
 
