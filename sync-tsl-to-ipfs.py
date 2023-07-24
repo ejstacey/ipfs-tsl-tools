@@ -4,6 +4,7 @@ import pprint
 import json
 import requests
 from requests_toolbelt.utils import dump
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 import argparse
 import configparser
 from requests.exceptions import HTTPError
@@ -106,44 +107,52 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
     for path in ipfsDb:
         if path not in tslDb:
             # everything in this path needs to be removed from ipfs
-            removeEntries(settings, ipfsDb[path])
             # print("remove: " + fullPath + path)
+            if 'Name' not in ipfsDb[path]:
+                # this is a directory, make the entry a bit different
+                entry = {
+                    'Path': '/' + fullPath,
+                    'Name': path
+                }
+            else:
+                # this is a file, we can use the entry
+                entry = ipfsDb[path]
+
+            removeEntry(settings, entry)
         else:
             # compare the entries.
             if path.endswith('/'):
                 # we have a deeper path, check it
                 parsePaths(settings, path, ipfsDb[path], tslDb[path], fullPath)
             else:
-                # we have a file, finally compare
-                # if settings['verify']:
-                #     hash = getIpfsHash(settings, ipfsDb[path]['Path'])
-                #     if ipfsDb[path]['Hash'] != hash:
-                #         print("No match, reupload.")
-                # else:
-                # pp.pprint(ipfsDb[path])
-                # pp.pprint(tslDb[path])
-                # pp.pprint(path)
                 if ipfsDb[path]['Size'] != tslDb[path]['size']:
-                    print("update: " +  fullPath + path)
+                    removeEntry(settings, ipfsDb[path])
+                    addEntry(settings, tslDb[path])
+                    # print("update: " +  fullPath + path)
 
     for path in tslDb:
         if path not in ipfsDb:
             # everything in this path needs to be added to ipfs
             # print("add: " + fullPath + path)
             if path.endswith('/'):
-                # we have a deeper path, check it
+                # we have a deeper path, first create the directory on the MFS
+                # print("creating directory: " + fullPath + path)
+                addDirectory(settings, '/' + fullPath + path)
+                # now parse that path.
                 parsePaths(settings, path, {}, tslDb[path], fullPath)
             else:
-                addEntries(settings, tslDb[path])
+                addEntry(settings, tslDb[path])
 
-def removeEntries(settings, entry):
+def removeEntry(settings, entry):
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/rm"
+
     args = {
         'arg'           : entry['Path'] + entry['Name'],
         'recursive'     : True
     }
+
     print('Removing ' + entry['Path'] + entry['Name'])
-    # pp.pprint(entry)
+
     r = requests.post(url, params=args)
     r.raise_for_status()
     if (r.text == '' or 'file does not exist' in r.text):
@@ -151,7 +160,7 @@ def removeEntries(settings, entry):
     else:
         raise Exception("Could not properly parse the return from a removal attempt of " + entry['Path'] + entry['Name'] + ":\n" + r.text)
 
-def addEntries(settings, entry):
+def addEntry(settings, entry):
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/add"
     args = {
         'quieter'       : 'true',
@@ -159,33 +168,26 @@ def addEntries(settings, entry):
         'to-files'      : entry['mfsPath']
     }
 
-    # file = open(entry['localPath'], 'rb')
-
-
-    # files = {
-    #         'file'          : (
-    #                             entry['name'],
-    #                             file,
-    #                             'application/octet-stream',
-    #                             {
-    #                                 'Abspath': entry['remotePath']
-    #                             }
-    #                         )
-    #         }
-
-    headers = {
+    fileHeaders = {
         'Abspath': entry['remotePath']
     }
+
+    data = MultipartEncoder(
+        fields= {
+            'part1': (entry['name'], open(entry['localPath'], 'rb'), 'application/octent-stream', fileHeaders)}
+    )
+    
+    headers = {
+        'Content-Type': data.content_type
+    }
+
     
     print('Adding ' + entry['mfsPath'])
     try:
-        # print(url)
-        with open(entry['localPath'], 'rb') as file:
-            r = requests.post(url, data=file, headers=headers)
-        # r = requests.post(url, params=args, files=files)
+        r = requests.post(url, data=data, params=args, headers=headers)
 
-        data = dump.dump_all (r)
-        print (data.decode ('utf-8'))
+        # data = dump.dump_all (r)
+        # print (data.decode ('utf-8'))
 
         # If the response was successful, no Exception will be raised
         r.raise_for_status()
@@ -202,7 +204,33 @@ def addEntries(settings, entry):
             return
         else:
             raise Exception("Could not properly parse the return from an addition attempt of " + entry['mfsPath'] + ".\n" + r.content())
-        
+
+
+def addDirectory(settings, dir):
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/mkdir"
+    args = {
+        'parents'   : 'true',
+        'arg'       : dir
+    }
+    
+    print('Creating ' + dir)
+    try:
+        r = requests.post(url,params=args)
+
+        # data = dump.dump_all (r)
+        # print (data.decode ('utf-8'))
+
+        # If the response was successful, no Exception will be raised
+        r.raise_for_status()
+    except HTTPError as http_err:
+        if (r.status_code == 500):
+            err = r.json()
+            http_err = err['Message']
+        raise Exception(f'HTTP error occurred: {http_err}')
+    except Exception as err:
+        raise Exception(f'Other error occurred: {err}')
+
+    
 def main():
     settings['remote']['ipfsport'] = str(settings['remote']['ipfsport'])
     settings['remote']['maddr'] = '/ip4/' + settings['remote']['ipfsserver'] + '/tcp/' + settings['remote']['ipfsport']
@@ -239,7 +267,7 @@ def main():
     #     'path'      : '/home/ejstacey/Hello.txt',
     #     'mfsPath'   : '/Hello.txt'
     # }
-    # addEntries(settings=settings, entry=entry)
+    # addEntry(settings=settings, entry=entry)
     # addDirectory(settings=settings, entry=entry)
 
     # OK we have two dicts full of all the info we care about
