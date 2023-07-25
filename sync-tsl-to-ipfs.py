@@ -37,8 +37,6 @@ settings['local'] = dict(config.items('local'))
 def grabCurrentIpfs(settings, directory="/"):
     ipfsDb = {}
 
-    # filesObj = settings['ipfsSession'].files.ls(path=directory,params={'long': True})
-
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/ls"
     args = {
         'arg'   : directory,
@@ -77,7 +75,7 @@ def grabCurrentTsl(settings, directory):
 
         if (path.is_file()):
             stats = path.stat()
-            mfsPath = str(path).replace(settings['local']['tsldirectory'], '/The Silent Library')
+            mfsPath = str(path).replace(settings['local']['tsldirectory'], settings['remote']['mfsrootdirectory'])
             fileEntry = {
                 'name'          : path.name,
                 'size'          : stats.st_size,
@@ -128,7 +126,6 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
                 if ipfsDb[path]['Size'] != tslDb[path]['size']:
                     removeEntry(settings, ipfsDb[path])
                     addEntry(settings, tslDb[path])
-                    # print("update: " +  fullPath + path)
 
     for path in tslDb:
         if path not in ipfsDb:
@@ -165,7 +162,7 @@ def addEntry(settings, entry):
     args = {
         'quieter'       : 'true',
         'nocopy'        : 'true',
-        'to-files'      : entry['mfsPath']
+        'to-files'      : '/' + entry['mfsPath']
     }
 
     fileHeaders = {
@@ -205,7 +202,6 @@ def addEntry(settings, entry):
         else:
             raise Exception("Could not properly parse the return from an addition attempt of " + entry['mfsPath'] + ".\n" + r.content())
 
-
 def addDirectory(settings, dir):
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/mkdir"
     args = {
@@ -230,6 +226,122 @@ def addDirectory(settings, dir):
     except Exception as err:
         raise Exception(f'Other error occurred: {err}')
 
+def findKey(settings, keyName):
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/key/list"
+    args = {
+        'l'   : 'true',
+    }
+    
+    print('Listing current keys, looking for "' + keyName + '".')
+    try:
+        r = requests.post(url,params=args)
+
+        # data = dump.dump_all (r)
+        # print (data.decode ('utf-8'))
+
+        # If the response was successful, no Exception will be raised
+        r.raise_for_status()
+    except HTTPError as http_err:
+        if (r.status_code == 500):
+            err = r.json()
+            http_err = err['Message']
+        raise Exception(f'HTTP error occurred: {http_err}')
+    except Exception as err:
+        raise Exception(f'Other error occurred: {err}')
+    else:
+        results = r.json()
+        if 'Keys' not in results:
+            pp.pprint(results)
+            raise Exception(f'Could not load key list')
+        
+        key = None
+        for keyEntry in results['Keys']:
+            if keyEntry['Name'] == keyName:
+                key = keyEntry['Name']
+                break
+        
+        if key is None:
+            # key doesn't exist, create it
+            print("Key " + keyName + " not found.")
+            key = addKey(settings, keyName)
+
+    return key
+ 
+def addKey(settings, keyName):
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/key/gen"
+    args = {
+        'arg'   : keyName,
+    }
+    
+    print('Creating key "' + keyName + '".')
+    try:
+        r = requests.post(url,params=args)
+
+        # data = dump.dump_all (r)
+        # print (data.decode ('utf-8'))
+
+        # If the response was successful, no Exception will be raised
+        r.raise_for_status()
+    except HTTPError as http_err:
+        if (r.status_code == 500):
+            err = r.json()
+            http_err = err['Message']
+        raise Exception(f'HTTP error occurred: {http_err}')
+    except Exception as err:
+        raise Exception(f'Other error occurred: {err}')
+    else:
+        key = r.json()
+
+    return key
+
+def grabCurrentIpfsRoot(settings):
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/ls"
+    args = {
+        'arg'   : '/',
+        'long'  : True
+    }
+    r = requests.post(url, params=args)
+    result = r.json()
+    # pp.pprint(result)
+    if "Entries" in result:
+        if result["Entries"] is not None:
+            entries = result['Entries']
+            for entry in entries:
+                if entry['Type'] == 1:
+                    # see if this is the directory we want
+                    # pp.pprint(entry)
+                    if entry['Name'] == settings['remote']['mfsrootdirectory']:
+                        return entry     
+
+    return None
+
+def updateIpns(settings, hash):
+    url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/name/publish"
+    args = {
+        'arg'   : '/ipfs/' + hash,
+        'key'   : settings['remote']['ipnskeyname']
+    }
+    
+    print('Publishing "' + hash + '".')
+    try:
+        r = requests.post(url,params=args)
+
+        # data = dump.dump_all (r)
+        # print (data.decode ('utf-8'))
+
+        # If the response was successful, no Exception will be raised
+        r.raise_for_status()
+    except HTTPError as http_err:
+        if (r.status_code == 500):
+            err = r.json()
+            http_err = err['Message']
+        raise Exception(f'HTTP error occurred: {http_err}')
+    except Exception as err:
+        raise Exception(f'Other error occurred: {err}')
+    else:
+        results = r.json()
+        # pp.pprint(results)
+        return results['Name']
     
 def main():
     settings['remote']['ipfsport'] = str(settings['remote']['ipfsport'])
@@ -240,7 +352,7 @@ def main():
     dbFile = Path(settings['options']['ipfsdbfilename'])
     if settings['options']['refresh'] or not dbFile.is_file():
         print("Loading IPFS info from " + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + ".")
-        ipfsDb['The Silent Library/'] = grabCurrentIpfs(settings, "/The Silent Library/")
+        ipfsDb[settings['remote']['mfsrootdirectory'] + '/'] = grabCurrentIpfs(settings, '/' + settings['remote']['mfsrootdirectory'] + '/')
         with open(settings['options']['ipfsdbfilename'],"w") as file:
             file.write(json.dumps(ipfsDb))
     else:
@@ -254,7 +366,7 @@ def main():
     dbFile = Path(settings['options']['tsldbfilename'])
     if settings['options']['refresh'] or not dbFile.is_file():
         print("Loading TSL Library from " + settings['local']['tsldirectory'])
-        tslDb['The Silent Library/'] = grabCurrentTsl(settings, settings['local']['tsldirectory'])
+        tslDb[settings['remote']['mfsrootdirectory'] + '/'] = grabCurrentTsl(settings, settings['local']['tsldirectory'])
         with open(settings['options']['tsldbfilename'],"w") as file:
             file.write(json.dumps(tslDb))
     else:
@@ -263,22 +375,20 @@ def main():
             tslDb = json.load(file)
     print("Done loading TSL Library.")
 
-    # entry = {
-    #     'path'      : '/home/ejstacey/Hello.txt',
-    #     'mfsPath'   : '/Hello.txt'
-    # }
-    # addEntry(settings=settings, entry=entry)
-    # addDirectory(settings=settings, entry=entry)
-
-    # OK we have two dicts full of all the info we care about
-    # parse it.
-    # print("ipfsDb:")
-    # pp.pprint(ipfsDb)
-    # print("tslDb:")
-    # pp.pprint(tslDb)
-    # print("parsing:")
+    print("Comparing data and making changes.")
     parsePaths(settings, '', ipfsDb, tslDb)
-    # verifyIpfsLibrary(settings)
+    print("Done comparing data and making changes.")
+
+    print("Updating IPNS entry")
+    settings['remote']['ipnsKey'] = findKey(settings, settings['remote']['ipnskeyname'])
+    print("IPNS key loaded.")
+    rootDir = grabCurrentIpfsRoot(settings)
+    if (rootDir is None):
+        raise Exception("Could not get the current ipfs root directory of " + settings['remote']['ipnskeyname'] + ".")
+    
+    ipns = updateIpns(settings, rootDir['Hash'])
+    print("IPNS key: " + ipns)
+
 
 main()
 

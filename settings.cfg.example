@@ -7,7 +7,6 @@ ipfsDbFileName = ipfsDb.json
 # The name of the file to use for the tslDb db save
 tslDbFileName = tslDb.json
 
-
 [remote]
 # RPC port of the ipfs server. You may have to make it listen on your local network IP, or set up an SSH tunnel
 ipfsServer = 1.2.3.4
@@ -15,6 +14,10 @@ ipfsServer = 1.2.3.4
 ipfsPort = 5001
 # the directory TSL is mounted into on the docker container or server running ipfs
 tslDirectory = /data/mounted-files/tsl
+# the directory that this collection lives under in the Mutable File System (MFS)
+mfsRootDirectory = The Silent Library
+# the name of the key to use for publishing the entire thing to IPNS (it's a name you make up)
+ipnsKeyName = tsl
 
 [local]
 # the local directory TSL is mounted into on the machine running this script
