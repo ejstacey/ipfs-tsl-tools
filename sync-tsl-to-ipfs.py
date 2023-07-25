@@ -40,7 +40,7 @@ settings['remote'] = dict(config.items('remote'))
 settings['options'] = dict(config.items('options'))
 settings['local'] = dict(config.items('local'))
 
-def grabCurrentIpfs(settings, directory=DIRECTORY_SEPARATOR):
+def grabCurrentIpfs(settings, directory='/'):
     ipfsDb = {}
 
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/ls"
@@ -61,9 +61,11 @@ def grabCurrentIpfs(settings, directory=DIRECTORY_SEPARATOR):
                     ipfsDb[entry['Name']] = entry
                 elif entry['Type'] == 1:
                     # directory, go deeper
-                    newDirectory = directory + entry['Name'] + DIRECTORY_SEPARATOR
+                    newDirectory = directory + entry['Name'] + '/'
+                    # print("going in " + newDirectory)
+                    # quit()
                     tmpData = grabCurrentIpfs(settings, newDirectory)
-                    ipfsDb[entry['Name'] + DIRECTORY_SEPARATOR] = tmpData
+                    ipfsDb[entry['Name'] + '/'] = tmpData
                 else:
                     pp.pprint(entry)
                     raise Exception('Unknown IPFS type: ' + entry['Type'])
@@ -81,7 +83,7 @@ def grabCurrentTsl(settings, directory):
 
         if (path.is_file()):
             stats = path.stat()
-            mfsPath = str(path).replace(settings['local']['tsldirectory'], settings['remote']['mfsrootdirectory'])
+            mfsPath = str(path).replace(settings['local']['tsldirectory'], settings['remote']['mfsrootdirectory']).replace('\\', '/')
             fileEntry = {
                 'name'          : path.name,
                 'size'          : stats.st_size,
@@ -93,7 +95,7 @@ def grabCurrentTsl(settings, directory):
         elif (path.is_dir()):
             # directory, go deeper
             newDirectory = str(path)
-            tempDir = str(path).split(DIRECTORY_SEPARATOR).pop() + DIRECTORY_SEPARATOR
+            tempDir = str(path).split(DIRECTORY_SEPARATOR).pop() + '/'
             tslDb[tempDir] = grabCurrentTsl(settings, newDirectory)
         else:
             raise Exception("Not recognised as a file or a directory: " + str(path))
@@ -115,17 +117,17 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
             if 'Name' not in ipfsDb[path]:
                 # this is a directory, make the entry a bit different
                 entry = {
-                    'Path': DIRECTORY_SEPARATOR + fullPath,
+                    'Path': '/' + fullPath.replace('\\', '/'),
                     'Name': path
                 }
             else:
                 # this is a file, we can use the entry
-                entry = ipfsDb[path]
+                entry = ipfsDb[path].replace('\\', '/')
 
             removeEntry(settings, entry)
         else:
             # compare the entries.
-            if path.endswith(DIRECTORY_SEPARATOR):
+            if path.replace('\\', '/').endswith('/'):
                 # we have a deeper path, check it
                 parsePaths(settings, path, ipfsDb[path], tslDb[path], fullPath)
             else:
@@ -137,10 +139,10 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
         if path not in ipfsDb:
             # everything in this path needs to be added to ipfs
             # print("add: " + fullPath + path)
-            if path.endswith(DIRECTORY_SEPARATOR):
+            if path.endswith('/'):
                 # we have a deeper path, first create the directory on the MFS
                 # print("creating directory: " + fullPath + path)
-                addDirectory(settings, DIRECTORY_SEPARATOR + fullPath + path)
+                addDirectory(settings, ('/' + fullPath + path).replace('\\', '/'))
                 # now parse that path.
                 parsePaths(settings, path, {}, tslDb[path], fullPath)
             else:
@@ -364,7 +366,7 @@ def main():
     dbFile = Path(settings['options']['ipfsdbfilename'])
     if settings['options']['refresh'] or not dbFile.is_file():
         print("Loading IPFS info from " + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + ".")
-        ipfsDb[settings['remote']['mfsrootdirectory'] + DIRECTORY_SEPARATOR] = grabCurrentIpfs(settings, DIRECTORY_SEPARATOR + settings['remote']['mfsrootdirectory'] + DIRECTORY_SEPARATOR)
+        ipfsDb[settings['remote']['mfsrootdirectory'] + '/'] = grabCurrentIpfs(settings, '/' + settings['remote']['mfsrootdirectory'] + '/')
         with open(settings['options']['ipfsdbfilename'],"w") as file:
             file.write(json.dumps(ipfsDb))
     else:
@@ -378,7 +380,7 @@ def main():
     dbFile = Path(settings['options']['tsldbfilename'])
     if settings['options']['refresh'] or not dbFile.is_file():
         print("Loading TSL Library from " + settings['local']['tsldirectory'])
-        tslDb[settings['remote']['mfsrootdirectory'] + DIRECTORY_SEPARATOR] = grabCurrentTsl(settings, settings['local']['tsldirectory'])
+        tslDb[settings['remote']['mfsrootdirectory'] + '/'] = grabCurrentTsl(settings, settings['local']['tsldirectory'])
         with open(settings['options']['tsldbfilename'],"w") as file:
             file.write(json.dumps(tslDb))
     else:
