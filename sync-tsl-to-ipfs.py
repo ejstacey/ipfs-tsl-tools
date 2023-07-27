@@ -122,7 +122,7 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
                 }
             else:
                 # this is a file, we can use the entry
-                entry = ipfsDb[path].replace('\\', '/')
+                entry = ipfsDb[path.replace('\\', '/')]
 
             removeEntry(settings, entry)
         else:
@@ -311,7 +311,7 @@ def addKey(settings, keyName):
 def grabCurrentIpfsRoot(settings):
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/ls"
     args = {
-        'arg'   : DIRECTORY_SEPARATOR,
+        'arg'   : '/',
         'long'  : True
     }
     r = requests.post(url, params=args)
