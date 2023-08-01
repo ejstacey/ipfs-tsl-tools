@@ -3,6 +3,7 @@
 import pprint
 import json
 import requests
+import os
 from requests_toolbelt.utils import dump
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import argparse
@@ -11,6 +12,11 @@ from requests.exceptions import HTTPError
 from pathlib import Path
 
 pp = pprint.PrettyPrinter(indent=4)
+
+if os.name == 'nt':
+    DIRECTORY_SEPARATOR='\\'
+else:
+    DIRECTORY_SEPARATOR='/'
 
 ###### See if a different config file is specified
 parser = argparse.ArgumentParser(
@@ -34,7 +40,7 @@ settings['remote'] = dict(config.items('remote'))
 settings['options'] = dict(config.items('options'))
 settings['local'] = dict(config.items('local'))
 
-def grabCurrentIpfs(settings, directory="/"):
+def grabCurrentIpfs(settings, directory='/'):
     ipfsDb = {}
 
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/ls"
@@ -56,6 +62,8 @@ def grabCurrentIpfs(settings, directory="/"):
                 elif entry['Type'] == 1:
                     # directory, go deeper
                     newDirectory = directory + entry['Name'] + '/'
+                    # print("going in " + newDirectory)
+                    # quit()
                     tmpData = grabCurrentIpfs(settings, newDirectory)
                     ipfsDb[entry['Name'] + '/'] = tmpData
                 else:
@@ -70,12 +78,12 @@ def grabCurrentTsl(settings, directory):
     dir = Path(directory)
     for path in dir.iterdir():
         # ignore anything starting with a /. in the path (file or directory starting with .)
-        if '/.' in str(path):
+        if DIRECTORY_SEPARATOR +  '.' in str(path):
             continue
 
         if (path.is_file()):
             stats = path.stat()
-            mfsPath = str(path).replace(settings['local']['tsldirectory'], settings['remote']['mfsrootdirectory'])
+            mfsPath = str(path).replace(settings['local']['tsldirectory'], settings['remote']['mfsrootdirectory']).replace('\\', '/')
             fileEntry = {
                 'name'          : path.name,
                 'size'          : stats.st_size,
@@ -87,7 +95,7 @@ def grabCurrentTsl(settings, directory):
         elif (path.is_dir()):
             # directory, go deeper
             newDirectory = str(path)
-            tempDir = str(path).split('/').pop() + '/'
+            tempDir = str(path).split(DIRECTORY_SEPARATOR).pop() + '/'
             tslDb[tempDir] = grabCurrentTsl(settings, newDirectory)
         else:
             raise Exception("Not recognised as a file or a directory: " + str(path))
@@ -109,17 +117,17 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
             if 'Name' not in ipfsDb[path]:
                 # this is a directory, make the entry a bit different
                 entry = {
-                    'Path': '/' + fullPath,
+                    'Path': '/' + fullPath.replace('\\', '/'),
                     'Name': path
                 }
             else:
                 # this is a file, we can use the entry
-                entry = ipfsDb[path]
+                entry = ipfsDb[path.replace('\\', '/')]
 
             removeEntry(settings, entry)
         else:
             # compare the entries.
-            if path.endswith('/'):
+            if path.replace('\\', '/').endswith('/'):
                 # we have a deeper path, check it
                 parsePaths(settings, path, ipfsDb[path], tslDb[path], fullPath)
             else:
@@ -134,7 +142,7 @@ def parsePaths(settings, path, ipfsDb, tslDb, fullPath=""):
             if path.endswith('/'):
                 # we have a deeper path, first create the directory on the MFS
                 # print("creating directory: " + fullPath + path)
-                addDirectory(settings, '/' + fullPath + path)
+                addDirectory(settings, ('/' + fullPath + path).replace('\\', '/'))
                 # now parse that path.
                 parsePaths(settings, path, {}, tslDb[path], fullPath)
             else:
@@ -147,6 +155,8 @@ def removeEntry(settings, entry):
         'arg'           : entry['Path'] + entry['Name'],
         'recursive'     : True
     }
+
+    args['arg'] = args['arg'].replace('\\', '/'),
 
     print('Removing ' + entry['Path'] + entry['Name'])
 
@@ -162,8 +172,10 @@ def addEntry(settings, entry):
     args = {
         'quieter'       : 'true',
         'nocopy'        : 'true',
-        'to-files'      : '/' + entry['mfsPath']
+        'to-files'      : DIRECTORY_SEPARATOR + entry['mfsPath']
     }
+
+    args['to-files'] = args['to-files'].replace('\\', '/'),
 
     fileHeaders = {
         'Abspath': entry['remotePath']
@@ -208,6 +220,8 @@ def addDirectory(settings, dir):
         'parents'   : 'true',
         'arg'       : dir
     }
+
+    args['arg'] = args['arg'].replace('\\', '/'),
     
     print('Creating ' + dir)
     try:
