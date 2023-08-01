@@ -1,7 +1,0 @@
-[postgresql]
-host=localhost
-database=ipfs
-port=5432
-table="tsl-links".tsl
-user=postgres
-password=SecurePas$1
