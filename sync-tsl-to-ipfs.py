@@ -173,7 +173,6 @@ def addEntry(settings, entry):
     args = {
         'quieter'       : 'true',
         'nocopy'        : 'true',
-        'pin'           : 'false',
         'to-files'      : DIRECTORY_SEPARATOR + entry['mfsPath']
     }
 
