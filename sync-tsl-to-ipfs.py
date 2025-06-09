@@ -206,8 +206,8 @@ def addEntry(settings, entry):
         try:
             r = requests.post(url, data=data, params=args, headers=headers)
 
-            # data = dump.dump_all (r)
-            # print (data.decode ('utf-8'))
+            data = dump.dump_all (r)
+            print (data.decode ('utf-8'))
 
             # If the response was successful, no Exception will be raised
             r.raise_for_status()
