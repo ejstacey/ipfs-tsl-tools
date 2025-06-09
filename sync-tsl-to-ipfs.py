@@ -5,6 +5,7 @@ import json
 import requests
 import os
 import time
+import mimetypes
 from requests_toolbelt.utils import dump
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import argparse
@@ -18,6 +19,10 @@ if os.name == 'nt':
     DIRECTORY_SEPARATOR='\\'
 else:
     DIRECTORY_SEPARATOR='/'
+
+mimetypes.init()
+mimetypes.types_map['.ass'] = 'text/plain'
+mimetypes.types_map['.srt'] = 'text/plain'
 
 ###### See if a different config file is specified
 parser = argparse.ArgumentParser(
@@ -182,9 +187,10 @@ def addEntry(settings, entry):
         'Abspath': entry['remotePath']
     }
 
+    mimetype = mimetypes.guess_type(entry['localPath'])[0]
     data = MultipartEncoder(
         fields= {
-            'part1': (entry['name'], open(entry['localPath'], 'rb'), 'application/octet-stream', fileHeaders)}
+            'part1': (entry['name'], open(entry['localPath'], 'rb'), mimetype, fileHeaders)}
     )
     
     headers = {
