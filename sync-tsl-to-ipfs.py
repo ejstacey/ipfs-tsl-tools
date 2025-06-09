@@ -173,6 +173,7 @@ def addEntry(settings, entry):
     args = {
         'quieter'       : 'true',
         'nocopy'        : 'true',
+        'pin'           : 'false',
         'to-files'      : DIRECTORY_SEPARATOR + entry['mfsPath']
     }
 
@@ -184,7 +185,7 @@ def addEntry(settings, entry):
 
     data = MultipartEncoder(
         fields= {
-            'part1': (entry['name'], open(entry['localPath'], 'rb'), 'application/octent-stream', fileHeaders)}
+            'part1': (entry['name'], open(entry['localPath'], 'rb'), 'application/octet-stream', fileHeaders)}
     )
     
     headers = {
