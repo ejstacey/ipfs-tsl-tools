@@ -4,6 +4,7 @@ import pprint
 import json
 import requests
 import os
+import time
 from requests_toolbelt.utils import dump
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import argparse
@@ -192,27 +193,40 @@ def addEntry(settings, entry):
 
     
     print('Adding ' + entry['mfsPath'])
-    try:
-        r = requests.post(url, data=data, params=args, headers=headers)
+    done = False
+    count = 0
+    while count <= 5 and not done:
+        count = count + 1
+        try:
+            r = requests.post(url, data=data, params=args, headers=headers)
 
-        # data = dump.dump_all (r)
-        # print (data.decode ('utf-8'))
+            # data = dump.dump_all (r)
+            # print (data.decode ('utf-8'))
 
-        # If the response was successful, no Exception will be raised
-        r.raise_for_status()
-    except HTTPError as http_err:
-        if (r.status_code == 500):
-            err = r.json()
-            http_err = err['Message']
-        raise Exception(f'HTTP error occurred: {http_err}')
-    except Exception as err:
-        raise Exception(f'Other error occurred: {err}')
-    else:
-        result = r.json()
-        if ('Name' in result):
-            return
+            # If the response was successful, no Exception will be raised
+            r.raise_for_status()
+            done = True
+        except HTTPError as http_err:
+            if (r.status_code == 500):
+                err = r.json()
+                http_err = err['Message']
+            if count > 5:
+                raise Exception(f'HTTP error occurred: {http_err}')
+            else:
+                print(f'HTTP error occurred: {http_err}. Sleeping 60 seconds and trying again.')
+                time.sleep(60)
+        except Exception as err:
+            if count > 5:
+                raise Exception(f'Other error occurred: {err}')
+            else:
+                print(f'Other error occurred: {err}. Sleeping 60 seconds and trying again.')
+                time.sleep(60)
         else:
-            raise Exception("Could not properly parse the return from an addition attempt of " + entry['mfsPath'] + ".\n" + r.content())
+            result = r.json()
+            if ('Name' in result):
+                return
+            else:
+                raise Exception("Could not properly parse the return from an addition attempt of " + entry['mfsPath'] + ".\n" + r.content())
 
 def addDirectory(settings, dir):
     url = "http://" + settings['remote']['ipfsserver'] + ":" + settings['remote']['ipfsport'] + "/api/v0/files/mkdir"
