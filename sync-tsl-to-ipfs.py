@@ -190,7 +190,7 @@ def addEntry(settings, entry):
         direct = True
     
     if (direct):
-        data = {'name': (entry['name'], open(entry['localPath'],'rb'), mimetype)}
+        data = {entry['name']: (open(entry['localPath'],'rb'))}
         headers = {
             'Content-Type': mimetype,
             'Abspath' : entry['remotePath']
