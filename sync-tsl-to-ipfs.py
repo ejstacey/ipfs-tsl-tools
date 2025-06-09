@@ -191,15 +191,18 @@ def addEntry(settings, entry):
     mimetype = mimetypes.guess_type(entry['localPath'])[0]
     if (fileSize < 10000000):
         data = {'name': (entry['name'], open(entry['localPath'],'rb'), mimetype, fileHeaders)}
+        headers = {
+            'Content-Type': mimetype
+        }
     else:
         data = MultipartEncoder(
             fields= {
                 'part1': (entry['name'], open(entry['localPath'], 'rb'), mimetype, fileHeaders)}
         )
     
-    headers = {
-        'Content-Type': data.content_type
-    }
+        headers = {
+            'Content-Type': data.content_type
+        }
 
     
     print('Adding ' + entry['mfsPath'])
