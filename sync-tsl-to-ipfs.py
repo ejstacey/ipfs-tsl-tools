@@ -187,11 +187,15 @@ def addEntry(settings, entry):
         'Abspath': entry['remotePath']
     }
 
+    fileSize = os.path.getsize(entry['localPath'])
     mimetype = mimetypes.guess_type(entry['localPath'])[0]
-    data = MultipartEncoder(
-        fields= {
-            'part1': (entry['name'], open(entry['localPath'], 'rb'), mimetype, fileHeaders)}
-    )
+    if (fileSize < 10000000):
+        data = {'name': (entry['name'], open(entry['localPath'],'rb'), mimetype, fileHeaders)}
+    else:
+        data = MultipartEncoder(
+            fields= {
+                'part1': (entry['name'], open(entry['localPath'], 'rb'), mimetype, fileHeaders)}
+        )
     
     headers = {
         'Content-Type': data.content_type
