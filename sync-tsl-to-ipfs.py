@@ -183,18 +183,22 @@ def addEntry(settings, entry):
 
     args['to-files'] = args['to-files'].replace('\\', '/'),
 
-    fileHeaders = {
-        'Abspath': entry['remotePath']
-    }
-
     fileSize = os.path.getsize(entry['localPath'])
     mimetype = mimetypes.guess_type(entry['localPath'])[0]
+    direct = False
     if (fileSize < 10000000):
-        data = {'name': (entry['name'], open(entry['localPath'],'rb'), mimetype, fileHeaders)}
+        direct = True
+    
+    if (direct):
+        data = {'name': (entry['name'], open(entry['localPath'],'rb'), mimetype)}
         headers = {
-            'Content-Type': mimetype
+            'Content-Type': mimetype,
+            'Abspath' : entry['remotePath']
         }
     else:
+        fileHeaders = {
+            'Abspath': entry['remotePath']
+        }
         data = MultipartEncoder(
             fields= {
                 'part1': (entry['name'], open(entry['localPath'], 'rb'), mimetype, fileHeaders)}
@@ -211,7 +215,10 @@ def addEntry(settings, entry):
     while count <= 5 and not done:
         count = count + 1
         try:
-            r = requests.post(url, data=data, params=args, headers=headers)
+            if (direct):
+                r = requests.post(url, files=data, params=args, headers=headers)
+            else:
+                r = requests.post(url, data=data, params=args, headers=headers)
 
             data = dump.dump_all (r)
             print (data.decode ('utf-8'))
