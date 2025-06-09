@@ -5,7 +5,6 @@ import json
 import requests
 import os
 import time
-import mimetypes
 from requests_toolbelt.utils import dump
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 import argparse
@@ -19,10 +18,6 @@ if os.name == 'nt':
     DIRECTORY_SEPARATOR='\\'
 else:
     DIRECTORY_SEPARATOR='/'
-
-mimetypes.init()
-mimetypes.types_map['.ass'] = 'text/plain'
-mimetypes.types_map['.srt'] = 'text/plain'
 
 ###### See if a different config file is specified
 parser = argparse.ArgumentParser(
@@ -183,30 +178,18 @@ def addEntry(settings, entry):
 
     args['to-files'] = args['to-files'].replace('\\', '/'),
 
-    fileSize = os.path.getsize(entry['localPath'])
-    mimetype = mimetypes.guess_type(entry['localPath'])[0]
-    direct = False
-    if (fileSize < 10000000):
-        direct = True
+    fileHeaders = {
+        'Abspath': entry['remotePath']
+    }
+
+    data = MultipartEncoder(
+        fields= {
+            'part1': (entry['name'], open(entry['localPath'], 'rb'), 'application/octet-stream', fileHeaders)}
+    )
     
-    if (direct):
-        data = {entry['name']: (open(entry['localPath'],'rb'))}
-        headers = {
-            'Content-Type': mimetype,
-            'Abspath' : entry['remotePath']
-        }
-    else:
-        fileHeaders = {
-            'Abspath': entry['remotePath']
-        }
-        data = MultipartEncoder(
-            fields= {
-                'part1': (entry['name'], open(entry['localPath'], 'rb'), mimetype, fileHeaders)}
-        )
-    
-        headers = {
-            'Content-Type': data.content_type
-        }
+    headers = {
+        'Content-Type': data.content_type
+    }
 
     
     print('Adding ' + entry['mfsPath'])
@@ -215,13 +198,10 @@ def addEntry(settings, entry):
     while count <= 5 and not done:
         count = count + 1
         try:
-            if (direct):
-                r = requests.post(url, files=data, params=args, headers=headers)
-            else:
-                r = requests.post(url, data=data, params=args, headers=headers)
+            r = requests.post(url, data=data, params=args, headers=headers)
 
-            data = dump.dump_all (r)
-            print (data.decode ('utf-8'))
+            # data = dump.dump_all (r)
+            # print (data.decode ('utf-8'))
 
             # If the response was successful, no Exception will be raised
             r.raise_for_status()
@@ -311,4 +291,3 @@ def main():
     print("Done comparing data and making changes.")
 
 main()
-
